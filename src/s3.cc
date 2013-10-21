@@ -63,6 +63,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 // Internet stuff
 #include <netdb.h>
@@ -71,6 +72,7 @@
 #include "connect.h"
 #include "rfc2553emu.h"
 #include "s3.h"
+#include "jsonz/jsonz.h"
 
 #define SLEN 1024
 
@@ -782,37 +784,46 @@ void HttpMethod::SendReq(FetchItem *Itm,CircleBuf &Out)
    string dateString((const char*)buffer);
    Req += "Date: " + dateString + "\r\n";
 
-   string extractedPassword;
-   if (Uri.Password.empty() && NULL == getenv("AWS_SECRET_ACCESS_KEY")) {
+   string extractedPassword = s3TempSecretAccessKey;
+   if (!Uri.Password.empty())
+   	extractedPassword = Uri.Password;
+   if (!Uri.Password.empty() && Uri.Password.at(0) == '[')
+   	extractedPassword = Uri.Password.substr(1,Uri.Password.size()-2);
+   if (getenv("AWS_SECRET_ACCESS_KEY"))
+	extractedPassword = getenv("AWS_SECRET_ACCESS_KEY");
+   if (extractedPassword.empty())
+   {
      cerr << "E: No AWS_SECRET_ACCESS_KEY set" << endl;
      exit(1);
-   } else if(Uri.Password.empty()) {
-     extractedPassword = getenv("AWS_SECRET_ACCESS_KEY");
-   } else {
-     if(Uri.Password.at(0) == '['){
-       extractedPassword = Uri.Password.substr(1,Uri.Password.size()-2);
-     }else{
-       extractedPassword = Uri.Password;
-     }
+   }
+
+   string user = s3TempAccessKeyId;
+   
+   if (!Uri.User.empty())
+	user = Uri.User;
+   if (getenv("AWS_ACCESS_KEY_ID"))
+	user = getenv("AWS_ACCESS_KEY_ID");
+   if (user.empty())
+   {
+   	cerr << "E: No AWS_ACCESS_KEY_ID set" << endl;
+   	exit(1);
    }
 
    char headertext[SLEN], signature[SLEN];
-   sprintf(headertext,"GET\n\n\n%s\n%s", dateString.c_str(), normalized_path.c_str());
+   if (user == s3TempAccessKeyId)
+	sprintf(headertext,"GET\n\n\n%s\nx-amz-security-token:%s\n%s", dateString.c_str(), s3TempToken.c_str(), normalized_path.c_str());
+   else
+	sprintf(headertext,"GET\n\n\n%s\n%s", dateString.c_str(), normalized_path.c_str());
    doEncrypt(headertext, signature, extractedPassword.c_str());
 
    string signatureString(signature);
-  string user;
-  if (Uri.User.empty() && NULL == getenv("AWS_ACCESS_KEY_ID")) {
-    cerr << "E: No AWS_ACCESS_KEY_ID set" << endl;
-    exit(1);
-  } else if (Uri.User.empty()) {
-    user = getenv("AWS_ACCESS_KEY_ID");
-  } else {
-    user = Uri.User;
-  }
 
-  //cerr << "user " << user << "\n";
+
+//  cerr << "user " << user << "\n";
+//  cerr << "access key " << extractedPassword << "\n";
 	Req += "Authorization: AWS " + user + ":" + signatureString + "\r\n";
+	if (user == s3TempAccessKeyId)
+		Req += "X-Amz-Security-Token: " + s3TempToken + "\r\n";
    	Req += "User-Agent: Ubuntu APT-HTTP/1.3 ("VERSION")\r\n\r\n";
 
    if (Debug == true)
@@ -1167,6 +1178,88 @@ bool HttpMethod::Configuration(string Message)
    Debug = _config->FindB("Debug::Acquire::http",false);
    return true;
 }
+
+namespace {
+static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream)
+{
+    std::string buf = std::string(static_cast<char *>(ptr), size * nmemb);
+    std::stringstream *response = static_cast<std::stringstream *>(stream);
+    response->write(buf.c_str(), (std::streamsize)buf.size());
+    return size * nmemb;
+}
+}
+
+bool HttpMethod::GetURLWithHeaders(const std::string &url, const std::vector<std::string> &headers, 
+	std::stringstream &response, std::string &error)
+{
+    curl_slist *headerlist = NULL;
+
+    std::vector<std::string>::const_iterator it;
+    for (it = headers.begin(); it < headers.end(); it++) {
+        headerlist = curl_slist_append(headerlist, it->c_str());
+    }   
+
+    CURL *curl = curl_easy_init();
+    char ebuf[CURL_ERROR_SIZE];
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1);
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, ebuf);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerlist);
+    CURLcode res = curl_easy_perform(curl); 
+    curl_easy_cleanup(curl);
+    curl_slist_free_all(headerlist);
+
+    if (res != CURLE_OK)
+        error = ebuf;
+    else
+        error.clear();
+
+    return res == CURLE_OK; 
+}
+
+									/*}}}*/
+// HttpMethod::GetS3IAMCreds						/*{{{*/
+// ---------------------------------------------------------------------
+/* */
+void HttpMethod::GetS3IAMCreds()
+{
+  std::string error, url;
+  std::vector<std::string> hdrs;
+  std::stringstream result;
+
+  if (!GetURLWithHeaders("http://169.254.169.254/latest/meta-data/iam/security-credentials/", hdrs, result, error))
+  	return ;
+
+  if (result.str().empty())
+	return ;
+
+  url = "http://169.254.169.254/latest/meta-data/iam/security-credentials/";
+  url += s3TempRoleName = result.str();
+
+  result.str("");
+  result.clear();
+
+  if (!GetURLWithHeaders(url, hdrs, result, error))
+  	return ;
+
+  void *iam = jsonz_parse(result.str().c_str());
+  if (!iam || jsonz_object_get_type(iam) != JSONZ_TYPE_DICT)
+	return ;
+
+  void *obj;
+  obj = jsonz_dict_get(iam, "AccessKeyId");
+  if (obj && jsonz_object_get_type(obj) == JSONZ_TYPE_STRING)
+  	s3TempAccessKeyId = jsonz_string_get_str(obj);
+  obj = jsonz_dict_get(iam, "SecretAccessKey");
+  if (obj && jsonz_object_get_type(obj) == JSONZ_TYPE_STRING)
+  	s3TempSecretAccessKey = jsonz_string_get_str(obj);
+  obj = jsonz_dict_get(iam, "Token");
+  if (obj && jsonz_object_get_type(obj) == JSONZ_TYPE_STRING)
+  	s3TempToken = jsonz_string_get_str(obj);
+}
+
 									/*}}}*/
 // HttpMethod::Loop - Main loop						/*{{{*/
 // ---------------------------------------------------------------------
@@ -1176,6 +1269,8 @@ int HttpMethod::Loop()
    signal(SIGTERM,SigTerm);
    signal(SIGINT,SigTerm);
    
+   GetS3IAMCreds();
+
    Server = 0;
    
    int FailCounter = 0;

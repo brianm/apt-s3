@@ -1,3 +1,9 @@
+apt-transport-s3 (1.2) precise; urgency=low
+
+  * Updated to use IAM temporary credentials
+
+ -- Aurélien Guillaume <aurelien@iwi.me>  Mon, 21 Oct 2013 09:58:00 +0000
+
 apt-transport-s3 (1.1.1ubuntu2) precise; urgency=low
 
   * Modified for company needs
