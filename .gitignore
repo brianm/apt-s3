@@ -5,4 +5,7 @@ debian/files
 debian/apt-transport-s3
 debian/apt-transport-s3.substvars
 debian/apt-transport-s3.debhelper.log
+*.sublime-workspace
 *~
+.vagrant
+apt-transport-s3*
