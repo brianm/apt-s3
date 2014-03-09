@@ -9,3 +9,4 @@ debian/apt-transport-s3.debhelper.log
 *~
 .vagrant
 apt-transport-s3*
+build
