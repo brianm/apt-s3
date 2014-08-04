@@ -1,3 +1,15 @@
+apt-transport-s3 (1.2ubuntu1) precise; urgency=low
+
+  * Loosening dependency on libapt-pkg4.12
+
+ -- Aurélien Guillaume <aurelien@iwi.me>  Tue, 22 Oct 2013 09:12:47 +0000
+
+apt-transport-s3 (1.2) precise; urgency=low
+
+  * Updated to use IAM temporary credentials
+
+ -- Aurélien Guillaume <aurelien@iwi.me>  Mon, 21 Oct 2013 09:58:00 +0000
+
 apt-transport-s3 (1.1.1ubuntu2) precise; urgency=low
 
   * Modified for company needs

@@ -17,7 +17,9 @@
 
 #include <apt-pkg/fileutl.h>
 #include <apt-pkg/acquire-method.h>
+#include <curl/curl.h>
 
+#include <sstream>
 #include "connect.h"
 #include "rfc2553emu.h"
 #include "s3.h"
@@ -31,6 +33,7 @@ int main()
 {
    setlocale(LC_ALL, "");
 
+   curl_global_init(CURL_GLOBAL_ALL);
    HttpMethod Mth;
    return Mth.Loop();
 }

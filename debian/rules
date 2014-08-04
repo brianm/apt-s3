@@ -2,11 +2,12 @@
 # vim: tabstop=4 softtabstop=4 noexpandtab fileencoding=utf-8
 
 # Uncomment this to turn on verbose mode.
-#export DH_VERBOSE=1
+export DH_VERBOSE=1
 
 include /usr/share/cdbs/1/rules/debhelper.mk
 
 DEB_DIR=$(CURDIR)/debian/apt-transport-s3
+DEB_DH_SHLIBDEPS_ARGS=--dpkg-shlibdeps-params "-xlibapt-pkg4.12"
 
 #configure/apt-transport-s3::
 #	@echo "We don't really have a configure script"

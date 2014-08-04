@@ -160,6 +160,13 @@ class HttpMethod : public pkgAcqMethod
    static time_t FailTime;
    static void SigTerm(int);
 
+   void GetS3IAMCreds();
+   bool GetURLWithHeaders(const string &, const vector<string> &, std::stringstream &, string &);
+   string s3TempRoleName;
+   string s3TempAccessKeyId;
+   string s3TempSecretAccessKey;
+   string s3TempToken;
+
    protected:
    virtual bool Fetch(FetchItem *);
    
